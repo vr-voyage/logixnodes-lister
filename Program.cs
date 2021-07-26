@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Reflection;
+using Microsoft.CSharp;
+using Newtonsoft.Json;
 
 namespace ListFrooxTypes
 {
@@ -105,8 +108,102 @@ namespace ListFrooxTypes
         
         }
 
-        static void LogiXListInputs(Type logixNodeType)
+        public static string TypeName(Type t)
         {
+
+            switch(t.Name)
+            {
+                case "Byte":
+                    return "byte";
+                case "SByte":
+                    return "sbyte";
+                case "Char":
+                    return "char";
+                /* Strangely, Decimal is Decimal
+                    * case "Decimal":
+                    return "decimal";*/
+                case "IntPtr":
+                    return "nint";
+                case "UIntPtr":
+                    return "nuint";
+                case "Int64":
+                    return "long";
+                case "UInt64":
+                    return "ulong";
+                case "Int16":
+                    return "int16";
+                case "UInt16":
+                    return "uint16";
+                case "Boolean":
+                    return "bool";
+                case "Int32":
+                    return "int";
+                case "UInt32":
+                    return "uint32";
+                case "Single":
+                    return "float";
+                case "Double":
+                    return "double";
+                case "String":
+                    return "string";
+                case "Object":
+                    return "object";
+                default:
+                    return t.Name;
+            }
+
+            
+        }
+
+        struct SlotInfos
+        {
+            public string name;
+            public string type;
+            public int generic;
+
+            public SlotInfos(string new_name, Type new_type)
+            {
+                name = new_name;
+                type = TypeName(new_type);
+                switch(type)
+                {
+                    case "T":
+                        generic = 1;
+                        break;
+                    case "N":
+                        generic = 1;
+                        break;
+                    case "O":
+                        generic = 2;
+                        break;
+                    default:
+                        generic = 0;
+                        break;
+                }
+            }
+        }
+
+        struct RemoteLogixNode
+        {
+            public string classname;
+            public string type;
+            public List<SlotInfos> inputs;
+            public List<SlotInfos> outputs;
+
+            public RemoteLogixNode(string name)
+            {
+                classname = name;
+                type = "Standard";
+                inputs = new List<SlotInfos>(8);
+                outputs = new List<SlotInfos>(8);
+            }
+            
+        }
+
+        static RemoteLogixNode LogiXListInputs(Type logixNodeType)
+        {
+            RemoteLogixNode node = new RemoteLogixNode(logixNodeType.FullName);
+
             foreach (FieldInfo f in logixNodeType.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public))
             {
                 Type fieldType = f.FieldType;
@@ -114,13 +211,16 @@ namespace ListFrooxTypes
                 switch(fieldType.Name)
                 {
                     case "Input`1":
-                        Console.WriteLine("Input   : {0} ({1})", fieldName, fieldType.GetGenericArguments()[0].Name);
+                        //Console.WriteLine("Input   : {0} ({1})", fieldName, fieldType.GetGenericArguments()[0].Name);
+                        node.inputs.Add(new SlotInfos(fieldName, fieldType.GetGenericArguments()[0]));
                         break;
                     case "Output`1":
-                        Console.WriteLine("Output  : {0} ({1})", fieldName, fieldType.GetGenericArguments()[0].Name);
+                        //Console.WriteLine("Output  : {0} ({1})", fieldName, fieldType.GetGenericArguments()[0].Name);
+                        node.outputs.Add(new SlotInfos(fieldName, fieldType.GetGenericArguments()[0]));
                         break;
                     case "Impulse":
-                        Console.WriteLine("Impulse : {0} ({1})", fieldName, fieldType);
+                        //Console.WriteLine("Impulse : {0} ({1})", fieldName, fieldType);
+                        node.outputs.Insert(0, new SlotInfos(fieldName, fieldType));
                         break;
                 }
             }
@@ -131,7 +231,8 @@ namespace ListFrooxTypes
                 {
                     if (c.AttributeType == typeof(FrooxEngine.LogiX.ImpulseTarget))
                     {
-                        Console.WriteLine("Impulse Target : {0}", m.Name);
+                        //Console.WriteLine("Impulse Target : {0}", m.Name);
+                        node.inputs.Insert(0, new SlotInfos(m.Name, typeof(FrooxEngine.LogiX.Impulse)));
                     }
                         
                 }
@@ -142,13 +243,18 @@ namespace ListFrooxTypes
                 string simpleName = t.Name;
                 if (simpleName == "IElementContent`1")
                 {
-                    Console.WriteLine("Output  : {0} ({1})", "*", t.GetGenericArguments()[0].Name);
+                    //Console.WriteLine("Output  : {0} ({1})", "*", t.GetGenericArguments()[0].Name);
+                    node.outputs.Add(new SlotInfos("*", t.GetGenericArguments()[0]));
+                    break;
                 }
             }
+
+            return node;
         }
 
         static void Main(string[] args)
         {
+            List<RemoteLogixNode> nodes = new List<RemoteLogixNode>(1024);
             Type[] types = typeof(FrooxEngine.LogiX.LogixNode).Assembly.GetTypes();
             foreach (Type t in types)
             {
@@ -159,14 +265,14 @@ namespace ListFrooxTypes
                 if (!fullName.Contains("<") && !fullName.Contains("+") && !t.IsAbstract && !IgnoredTypeName(fullName))
                 {
                     Console.WriteLine(fullName);
-                    LogiXListInputs(t);
+                    nodes.Add(LogiXListInputs(t));
                 }
-                    //Console.WriteLine(fullName);
-
-                
+                //Console.WriteLine(fullName);  
             }
             Console.WriteLine("Hello World!");
-            //LogiXListInputs(typeof(FrooxEngine.LogiX.Experimental.WriteTextToFile));
+            LogiXListInputs(typeof(FrooxEngine.LogiX.Experimental.WriteTextToFile));
+            Console.WriteLine(JsonConvert.SerializeObject(nodes, Formatting.Indented));
+            Console.WriteLine("Generated {0} nodes", nodes.Count);
         }
     }
 }
